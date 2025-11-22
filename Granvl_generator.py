@@ -19,7 +19,7 @@ class StoryboardGenerator:
     
     def setup_gui(self):
         self.root = tk.Tk()
-        self.root.title("그래픽노블 제네레이터 0.1 by 빽도")
+        self.root.title("그래픽노블 제네레이터 0.2 by 빽도")
         self.root.geometry("1000x800")
         
         # 메인 프레임
@@ -44,6 +44,13 @@ class StoryboardGenerator:
         model_combo = ttk.Combobox(api_frame, textvariable=self.model_var, width=25, 
                                    values=["gemini-3-pro-preview", "gemini-2.0-flash-exp", "gemini-2.5-pro"])
         model_combo.pack(side=tk.LEFT, padx=(0, 10))
+        
+        ttk.Label(api_frame, text="비율:").pack(side=tk.LEFT, padx=(10, 5))
+        self.aspect_ratio_var = tk.StringVar(value="1:1.4")
+        aspect_combo = ttk.Combobox(api_frame, textvariable=self.aspect_ratio_var, width=10, 
+                                   values=["1:1.4", "16:9"], state="readonly")
+        aspect_combo.pack(side=tk.LEFT, padx=(0, 10))
+        aspect_combo.bind("<<ComboboxSelected>>", self.on_aspect_ratio_changed)
         
         # 프로젝트 제목 행
         title_frame = ttk.Frame(control_frame)
@@ -135,6 +142,7 @@ class StoryboardGenerator:
         
         # 이미지 클릭 이벤트 바인딩
         self.image_canvas.bind("<Button-1>", self.on_image_click)
+        self.image_canvas.bind("<Button-3>", self.on_image_right_click)
         
         # 상태바
         self.status_label = ttk.Label(main_frame, text="준비", relief=tk.SUNKEN)
@@ -288,9 +296,17 @@ class StoryboardGenerator:
             page_data = self.pages[self.current_page]
             
             # 지시문 + 헤더 + 페이지 내용 통합
-            full_content = "Draw a graphic novel based on the following storyboard. You can draw graphic novels only in the language you provided, but you can use other languages ​​if you need to quote from the work.This graphic novel's page format is 1:1.4 width-to-height. Please make the panels taller.\n\n"
+            full_content = "Draw a graphic novel based on the following storyboard. You can draw graphic novels only in the language you provided, but you can use other languages ​​if you need to quote from the work.\n\n"
             full_content += f"{self.header}\n\n"
-            full_content += f"{page_data['title']}\n\n{page_data['content']}"
+            full_content += f"{page_data['title']}\n\n{page_data['content']}\n\n"
+            
+            # 가로세로 비율 정보 추가
+            aspect_ratio = self.aspect_ratio_var.get()
+            if aspect_ratio == "1:1.4":
+                full_content += "This graphic novel's page format is 1:1.4 width-to-height. Please make the panels taller."
+            elif aspect_ratio == "16:9":
+                full_content += "This graphic novel's page format is 16:9 width-to-height. Please make the panels wider."
+            
             self.page_text.insert("1.0", full_content)
             
             # 해당 페이지의 이미지가 있으면 표시
@@ -337,10 +353,46 @@ class StoryboardGenerator:
         self.current_photo = None
         self.current_image = None
     
+    def on_aspect_ratio_changed(self, event=None):
+        """비율 설정 변경 시 페이지 내용 리프레시"""
+        if self.pages:
+            self.display_current_page()
+    
     def on_image_click(self, event):
         """이미지 클릭 시 전체화면으로 표시"""
         if self.current_image_path:
             self.show_fullscreen_image()
+    
+    def on_image_right_click(self, event):
+        """이미지 오른쪽 클릭 시 저장 메뉴 표시"""
+        if self.current_image_path:
+            menu = tk.Menu(self.root, tearoff=0)
+            menu.add_command(label="이미지 저장", command=self.save_image_as)
+            menu.post(event.x_root, event.y_root)
+    
+    def save_image_as(self):
+        """현재 이미지를 다른 이름으로 저장"""
+        if not self.current_image_path:
+            return
+        
+        try:
+            # 기본 파일명 생성
+            from pathlib import Path
+            default_name = f"page_{self.current_page + 1:03d}.png"
+            
+            file_path = filedialog.asksaveasfilename(
+                title="이미지 저장",
+                defaultextension=".png",
+                initialfile=default_name,
+                filetypes=[("PNG files", "*.png"), ("All files", "*.*")]
+            )
+            
+            if file_path:
+                import shutil
+                shutil.copy2(self.current_image_path, file_path)
+                messagebox.showinfo("완료", f"이미지가 저장되었습니다.\n{file_path}")
+        except Exception as e:
+            messagebox.showerror("오류", f"이미지 저장 실패:\n{str(e)}")
     
     def show_fullscreen_image(self):
         """전체화면 이미지 뷰어"""
@@ -452,10 +504,46 @@ class StoryboardGenerator:
             prev_btn.config(state=tk.NORMAL if fs_page['current'] > 0 else tk.DISABLED)
             next_btn.config(state=tk.NORMAL if fs_page['current'] < len(self.pages) - 1 else tk.DISABLED)
             
+            # 오른쪽 클릭 저장 기능
+            def on_right_click(event):
+                """전체화면에서 오른쪽 클릭 시 이미지 저장"""
+                project_folder = self.get_project_folder()
+                images_folder = project_folder / 'images'
+                image_path = images_folder / f'page_{fs_page["current"] + 1:03d}.png'
+                
+                if image_path.exists():
+                    menu = tk.Menu(fullscreen_window, tearoff=0)
+                    menu.add_command(label="이미지 저장", 
+                                   command=lambda: save_fullscreen_image(image_path))
+                    menu.post(event.x_root, event.y_root)
+            
+            def save_fullscreen_image(source_path):
+                """전체화면 이미지를 다른 이름으로 저장"""
+                try:
+                    default_name = f"page_{fs_page['current'] + 1:03d}.png"
+                    
+                    file_path = filedialog.asksaveasfilename(
+                        title="이미지 저장",
+                        defaultextension=".png",
+                        initialfile=default_name,
+                        filetypes=[("PNG files", "*.png"), ("All files", "*.*")]
+                    )
+                    
+                    if file_path:
+                        import shutil
+                        shutil.copy2(source_path, file_path)
+                        messagebox.showinfo("완료", f"이미지가 저장되었습니다.\n{file_path}")
+                except Exception as e:
+                    messagebox.showerror("오류", f"이미지 저장 실패:\n{str(e)}")
+            
             # 키보드 이벤트 바인딩
             fullscreen_window.bind("<Escape>", close_fullscreen)
             fullscreen_window.bind("<Left>", lambda e: navigate_page(-1))
             fullscreen_window.bind("<Right>", lambda e: navigate_page(1))
+            
+            # 마우스 오른쪽 클릭 바인딩
+            image_label.bind("<Button-3>", on_right_click)
+            fullscreen_window.bind("<Button-3>", on_right_click)
             
         except ImportError:
             messagebox.showerror("오류", "PIL(Pillow) 라이브러리가 필요합니다.\npip install Pillow")
@@ -494,6 +582,12 @@ class StoryboardGenerator:
             # 헤더 제거 (헤더가 있다면)
             if self.header and page_content.startswith(self.header):
                 page_content = page_content[len(self.header):].strip()
+            
+            # 비율 정보 제거
+            if "This graphic novel's page format is 1:1.4 width-to-height." in page_content:
+                page_content = page_content.replace("This graphic novel's page format is 1:1.4 width-to-height. Please make the panels taller.", "").strip()
+            if "This graphic novel's page format is 16:9 width-to-height." in page_content:
+                page_content = page_content.replace("This graphic novel's page format is 16:9 width-to-height. Please make the panels wider.", "").strip()
             
             # 페이지 제목과 내용 분리
             lines = page_content.split('\n', 1)
@@ -715,7 +809,14 @@ class StoryboardGenerator:
             # 프롬프트 생성
             prompt = f"Draw a graphic novel based on the following storyboard.\n\n"
             prompt += f"{self.header}\n\n"
-            prompt += f"{page_data['title']}\n\n{page_data['content']}"
+            prompt += f"{page_data['title']}\n\n{page_data['content']}\n\n"
+            
+            # 가로세로 비율 정보 추가
+            aspect_ratio = self.aspect_ratio_var.get()
+            if aspect_ratio == "1:1.4":
+                prompt += "This graphic novel's page format is 1:1.4 width-to-height. Please make the panels taller."
+            elif aspect_ratio == "16:9":
+                prompt += "This graphic novel's page format is 16:9 width-to-height. Please make the panels wider."
             
             # 이미지 생성
             image_path = self.generate_image_from_prompt(prompt, i + 1)
@@ -798,7 +899,8 @@ class StoryboardGenerator:
         try:
             config = {
                 'api_key': self.api_key_var.get(),
-                'model': self.model_var.get()
+                'model': self.model_var.get(),
+                'aspect_ratio': self.aspect_ratio_var.get()
             }
             with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
@@ -828,6 +930,7 @@ class StoryboardGenerator:
                 config = json.load(f)
             self.api_key_var.set(config.get('api_key', ''))
             self.model_var.set(config.get('model', 'gemini-2.0-flash-exp'))
+            self.aspect_ratio_var.set(config.get('aspect_ratio', '1:1.4'))
         except Exception as e:
             pass
     
