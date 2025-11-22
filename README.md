@@ -3,6 +3,13 @@
 python Granvl_generator.py
 
 
+변경내용
+
+Ver 0.2
+
+1. 기본 이미지 포맷이 1:1.4로 세로가 길어졌습니다. 
+
+
 
 사용방법
 
