@@ -288,7 +288,7 @@ class StoryboardGenerator:
             page_data = self.pages[self.current_page]
             
             # 지시문 + 헤더 + 페이지 내용 통합
-            full_content = "Draw a graphic novel based on the following storyboard.You can draw graphic novels only in the language you provided, but you can use other languages ​​if you need to quote from the work.\n\n"
+            full_content = "Draw a graphic novel based on the following storyboard. You can draw graphic novels only in the language you provided, but you can use other languages ​​if you need to quote from the work.This graphic novel's page format is 1:1.4 width-to-height. Please make the panels taller.\n\n"
             full_content += f"{self.header}\n\n"
             full_content += f"{page_data['title']}\n\n{page_data['content']}"
             self.page_text.insert("1.0", full_content)
