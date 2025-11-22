@@ -14,12 +14,13 @@ class StoryboardGenerator:
         self.pages = []
         self.header = ""
         self.project_title = ""
+        self.reference_image_path = None
         self.setup_gui()
         self.load_config()
     
     def setup_gui(self):
         self.root = tk.Tk()
-        self.root.title("그래픽노블 제네레이터 0.2 by 빽도")
+        self.root.title("그래픽노블 제네레이터 0.3 by 빽도")
         self.root.geometry("1000x800")
         
         # 메인 프레임
@@ -60,6 +61,10 @@ class StoryboardGenerator:
         self.project_title_var = tk.StringVar()
         title_entry = ttk.Entry(title_frame, textvariable=self.project_title_var, width=50)
         title_entry.pack(side=tk.LEFT, padx=(0, 10))
+        
+        ttk.Button(title_frame, text="레퍼런스 이미지 선택", command=self.select_reference_image).pack(side=tk.LEFT, padx=(10, 5))
+        self.reference_label = ttk.Label(title_frame, text="없음", foreground="gray")
+        self.reference_label.pack(side=tk.LEFT, padx=(5, 0))
         
         # 버튼 행
         button_frame = ttk.Frame(control_frame)
@@ -147,6 +152,20 @@ class StoryboardGenerator:
         # 상태바
         self.status_label = ttk.Label(main_frame, text="준비", relief=tk.SUNKEN)
         self.status_label.pack(fill=tk.X, pady=(10, 0))
+    
+    def select_reference_image(self):
+        """레퍼런스 이미지 선택"""
+        file_path = filedialog.askopenfilename(
+            title="레퍼런스 이미지 선택",
+            filetypes=[("Image files", "*.png *.jpg *.jpeg *.gif *.bmp"), ("All files", "*.*")]
+        )
+        
+        if file_path:
+            self.reference_image_path = file_path
+            from pathlib import Path
+            filename = Path(file_path).name
+            self.reference_label.config(text=filename, foreground="black")
+            self.status_label.config(text=f"레퍼런스 이미지: {filename}")
     
     def get_project_folder(self):
         """프로젝트 폴더 경로 반환 (없으면 생성)"""
@@ -296,7 +315,7 @@ class StoryboardGenerator:
             page_data = self.pages[self.current_page]
             
             # 지시문 + 헤더 + 페이지 내용 통합
-            full_content = "Draw a graphic novel based on the following storyboard. You can draw graphic novels only in the language you provided, but you can use other languages ​​if you need to quote from the work.\n\n"
+            full_content = "Draw a graphic novel based on the following storyboard. Use uploaded picture as the reference while drawing. You can draw graphic novels only in the language you provided, but you can use other languages ​​if you need to quote from the work.\n\n"
             full_content += f"{self.header}\n\n"
             full_content += f"{page_data['title']}\n\n{page_data['content']}\n\n"
             
@@ -576,12 +595,14 @@ class StoryboardGenerator:
             page_content = self.page_text.get("1.0", tk.END).strip()
             
             # 지시문 제거
-            if page_content.startswith("Draw a graphic novel based on the following storyboard."):
-                page_content = page_content[len("Draw a graphic novel based on the following storyboard."):].strip()
+            instruction = "Draw a graphic novel based on the following storyboard. Use uploaded picture as the reference while drawing. You can draw graphic novels only in the language you provided, but you can use other languages ​​if you need to quote from the work."
+            if page_content.startswith(instruction):
+                page_content = page_content[len(instruction):].strip()
             
-            # 헤더 제거 (헤더가 있다면)
-            if self.header and page_content.startswith(self.header):
-                page_content = page_content[len(self.header):].strip()
+            # 헤더 제거 (헤더가 여러 번 중복되어 있을 수 있으므로 모두 제거)
+            if self.header:
+                while page_content.startswith(self.header):
+                    page_content = page_content[len(self.header):].strip()
             
             # 비율 정보 제거
             if "This graphic novel's page format is 1:1.4 width-to-height." in page_content:
@@ -623,14 +644,43 @@ class StoryboardGenerator:
             return None
         
         try:
+            import base64
+            
             # Gemini 3 Pro Image Preview API 사용
             api_url = f'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key={api_key}'
             
+            # parts 배열 생성
+            parts = [{"text": prompt}]
+            
+            # 레퍼런스 이미지가 있으면 추가
+            if self.reference_image_path:
+                try:
+                    with open(self.reference_image_path, 'rb') as img_file:
+                        image_data = base64.b64encode(img_file.read()).decode('utf-8')
+                    
+                    # 이미지 MIME 타입 판단
+                    from pathlib import Path
+                    ext = Path(self.reference_image_path).suffix.lower()
+                    mime_type = {
+                        '.png': 'image/png',
+                        '.jpg': 'image/jpeg',
+                        '.jpeg': 'image/jpeg',
+                        '.gif': 'image/gif',
+                        '.bmp': 'image/bmp'
+                    }.get(ext, 'image/jpeg')
+                    
+                    parts.append({
+                        "inlineData": {
+                            "mimeType": mime_type,
+                            "data": image_data
+                        }
+                    })
+                except Exception as e:
+                    messagebox.showwarning("경고", f"레퍼런스 이미지 로드 실패: {str(e)}\n레퍼런스 없이 진행합니다.")
+            
             request_data = {
                 "contents": [{
-                    "parts": [{
-                        "text": prompt
-                    }]
+                    "parts": parts
                 }]
             }
             
