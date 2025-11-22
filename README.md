@@ -1,6 +1,6 @@
 실행방법 
 
-python granble_generator.py
+python Granvl_generator.py
 
 
 
